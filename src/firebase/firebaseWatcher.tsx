@@ -1,11 +1,33 @@
 import * as preact from "preact";
+
+import * as firebase from "firebase/app";
+import "firebase/auth";
+
 import { FirebaseCache } from "./FirebaseCache";
 import { db } from "../../db";
 import { render } from "preact";
 import { proxyWrapper, isProxy } from "../proxyWrapper";
 import { jsxWalk } from "../jsxWalk";
+import { isChromeExtensionBootstrap } from "./lib/misc";
+import { rootPromise } from "./lib/promise";
 
 let firebaseCache = new FirebaseCache(db);
+
+export function authNow() {
+    let provider = new firebase.auth.GoogleAuthProvider();
+    let unsub = firebase.auth().onAuthStateChanged((user) => {
+        if(user === null) {
+            rootPromise(firebase.auth().signInWithPopup(provider));
+        }
+        unsub();
+    });
+}
+
+if(db) {
+    firebase.auth().onAuthStateChanged((user) => {
+        firebaseCache.forceSetValue("/authuseremail", user?.email || undefined);
+    });
+}
 
 let proxy: any = proxyWrapper(
     (pathHash) => {
@@ -16,7 +38,7 @@ let proxy: any = proxyWrapper(
     },
     (pathHash, value) => {
         firebaseCache.getValue(pathHash);
-        db.database().ref(pathHash).set(value);
+        rootPromise(db.database().ref(pathHash).set(value));
     }
 );
 
@@ -24,13 +46,15 @@ export function fireData(): FirebaseData {
     return proxy;
 }
 
+export function eventWrite(callback: () => void) {
+    firebaseCache.wrapGetValue(callback, lastEventCallback);
+}
+
 // TODO: Make it so the FirebaseCache supports accessing values with:
 //  1) Not creating subscriptions
 //  2) Throwing if values that we not previous accessed were accessed
 // And then use that instead of this dummy callback
-function lastEventCallback() {
-
-}
+function lastEventCallback() { }
 
 export function firebaseWatcher<
     ClassType extends
@@ -56,6 +80,7 @@ export function firebaseWatcher<
                             if(typeof value === "function") {
                                 let valueFnc: Function = value;
                                 node.props[key] = function() {
+                                    console.log(`Clicked on ${key} for`, node);
                                     return firebaseCache.wrapGetValue(() => {
                                         return valueFnc.apply(node.props, arguments);
                                     }, lastEventCallback);
@@ -65,7 +90,7 @@ export function firebaseWatcher<
                     }
                 }
                 if(node && typeof node === "function" && isProxy in node) {
-                    return "";
+                    return undefined;
                 }
                 //console.log(node);
                 return node;

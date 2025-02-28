@@ -15,7 +15,8 @@
         "jsxFactory": "preact.createElement",
         //"jsxFactory": "ReactOverride.createElement",
         "types": [
-            "node"
+            "node",
+            "@types/chrome"
         ],
         "experimentalDecorators": true,
         "emitDecoratorMetadata": true

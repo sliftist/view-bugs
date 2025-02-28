@@ -1,5 +1,6 @@
 import * as firebaseSource from "firebase/app";
 import "firebase/database";
+import { isChromeExtensionBootstrap, isChromeExtensionScript } from "./src/firebase/lib/misc";
 // <script src="https://www.gstatic.com/firebasejs/7.15.1/firebase-app.js"></script>
 // <script src="https://www.gstatic.com/firebasejs/7.15.1/firebase-database.js"></script>
 
@@ -13,5 +14,10 @@ var firebaseConfig = {
     messagingSenderId: "1030786158083",
     appId: "1:1030786158083:web:49c0d9408ef3e27e364836"
 };
+
 // Initialize Firebase
-export const db = firebaseSource.initializeApp(firebaseConfig);
+export const db: firebase.app.App = (
+    !isChromeExtensionBootstrap() && !isChromeExtensionScript()
+    ? firebaseSource.initializeApp(firebaseConfig)
+    : null as any as firebase.app.App
+);

@@ -29,8 +29,7 @@ function getConfig(env, argv) {
         ],
         output: {
             path: path.resolve(__dirname, "dist"),
-            filename: "[name].js",
-            libraryTarget: "var"
+            filename: "[name].js"
         },
         devtool: (
             "inline-source-map"
@@ -65,6 +64,11 @@ function getConfig(env, argv) {
         node: {
             __filename: true,
             __dirname: true,
+        },
+        devServer: {
+            headers: {
+                "Access-Control-Allow-Origin": "*"
+            }
         }
     };
     return config;

@@ -1,3 +1,5 @@
+import { rootPromise } from "./lib/promise";
+
 export class FirebaseCache {
     constructor(private app: firebase.app.App) { }
 
@@ -5,6 +7,8 @@ export class FirebaseCache {
     subscriptions: Map<string, Set<() => void>> = new Map();
     lastAccesses: Map<() => void, Set<string>> = new Map();
     curFunction: (() => void)|undefined = undefined;
+
+    forceSetValues: Set<string> = new Set();
 
     refToPath: WeakMap<any, string> = new WeakMap();
 
@@ -16,6 +20,7 @@ export class FirebaseCache {
         if(!lastAccesses) {
             throw new Error(`Called getValue outside of FirebaseCache.wrapGetValue`);
         }
+
         lastAccesses.add(pathHash);
         return this.valueCache.get(pathHash);
     }
@@ -31,6 +36,19 @@ export class FirebaseCache {
         lastAccesses.delete(pathHash);
     }
 
+    forceSetValue(pathHash: string, value: unknown) {
+        console.log(`Force set ${pathHash} to ${value}`);
+        this.valueCache.set(pathHash, value);
+        this.forceSetValues.add(pathHash);
+        this.onChanged(pathHash, value);
+        let subscriptions = this.subscriptions.get(pathHash);
+        if(subscriptions) {
+            for(let fnc of subscriptions) {
+                this.removeSubscription(pathHash, fnc);
+            }
+        }
+    }
+
     pendingCallbacks: Set<() => void>|undefined;
 
     callback = (a: firebase.database.DataSnapshot, b?: string | null) => {
@@ -38,14 +56,19 @@ export class FirebaseCache {
         if(path === undefined) {
             throw new Error(`Cannot find ref in callback`);
         }
-        this.valueCache.set(path, a.val());
+        this.onChanged(path, a.val());
+    };
+    onChanged(path: string, value: unknown) {
+        if(this.forceSetValues.has(path)) return;
+
+        this.valueCache.set(path, value);
         let subscriptions = this.subscriptions.get(path);
         if(subscriptions) {
             let pendingFncs = this.pendingCallbacks;
             if(!pendingFncs) {
                 let curPendingFncs = pendingFncs = new Set();
                 this.pendingCallbacks = pendingFncs;
-                Promise.resolve().then(() => {
+                rootPromise(Promise.resolve().then(() => {
                     this.pendingCallbacks = undefined;
                     for(let callback of curPendingFncs) {
                         try {
@@ -55,13 +78,13 @@ export class FirebaseCache {
                             setTimeout(() => { throw e; }, 0);
                         }
                     }
-                });
+                }));
             }
             for(let fnc of subscriptions) {
                 pendingFncs.add(fnc);
             }
         }
-    };
+    }
     removeSubscription(path: string, fnc: () => void) {
         let subscriptions = this.subscriptions.get(path);
         if(!subscriptions) throw new Error(`Internal error`);
@@ -69,7 +92,9 @@ export class FirebaseCache {
         if(subscriptions.size === 0) {
             // unsubscribe
             this.app.database().ref(path).off("value", this.callback);
-            this.valueCache.delete(path);
+            if(!this.forceSetValues.has(path)) {
+                this.valueCache.delete(path);
+            }
             this.subscriptions.delete(path);
             console.log(`Unwatch path ${path}`);
         }
@@ -98,10 +123,13 @@ export class FirebaseCache {
                         let subscriptions = this.subscriptions.get(path);
                         if(!subscriptions) {
                             // subscribe
-                            console.log(`Watch path ${path}`);
-                            let ref = this.app.database().ref(path);
-                            this.refToPath.set((ref as any).path, path);
-                            ref.on("value", this.callback);
+                            if(!this.forceSetValues.has(path)) {
+                                console.log(`Watch path ${path}`);
+                                let ref = this.app.database().ref(path);
+                                this.refToPath.set((ref as any).path, path);
+                                ref.on("value", this.callback);
+                            }
+
                             subscriptions = new Set();
                             this.subscriptions.set(path, subscriptions);
                         }

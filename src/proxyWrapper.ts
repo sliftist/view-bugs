@@ -8,7 +8,7 @@ export function proxyWrapper(
     setValue: (pathHash: string, value: unknown) => void,
     pathHash: string = ""
 ) {
-    // BUG: We leave memory by never emptying these caches
+    // BUG: We leak memory by never emptying these caches
     // key => any
     let proxyCache: Map<string, any> = new Map();
     let pathHashCache: Map<string, string> = new Map();
